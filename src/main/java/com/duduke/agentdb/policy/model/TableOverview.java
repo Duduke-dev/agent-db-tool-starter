@@ -1,4 +1,4 @@
-package com.duduke.agentdb.policy;
+package com.duduke.agentdb.policy.model;
 
 /**
  * 一张已授权表的概览：表名、用途说明、可访问列数。

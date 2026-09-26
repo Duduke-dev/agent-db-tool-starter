@@ -1,4 +1,4 @@
-package com.duduke.agentdb.policy;
+package com.duduke.agentdb.policy.model;
 
 import org.jooq.Field;
 

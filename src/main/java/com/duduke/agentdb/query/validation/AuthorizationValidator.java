@@ -2,8 +2,8 @@ package com.duduke.agentdb.query.validation;
 
 import com.duduke.agentdb.error.AgentToolException;
 import com.duduke.agentdb.error.ToolErrorCode;
-import com.duduke.agentdb.policy.ResolvedColumn;
-import com.duduke.agentdb.policy.ResolvedTable;
+import com.duduke.agentdb.policy.model.ResolvedColumn;
+import com.duduke.agentdb.policy.model.ResolvedTable;
 import com.duduke.agentdb.query.dsl.Condition;
 import com.duduke.agentdb.query.dsl.OrderItem;
 import com.duduke.agentdb.query.dsl.QueryRequest;

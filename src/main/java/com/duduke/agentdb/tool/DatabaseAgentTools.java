@@ -3,7 +3,7 @@ package com.duduke.agentdb.tool;
 import com.duduke.agentdb.error.AgentToolException;
 import com.duduke.agentdb.error.ToolErrorCode;
 import com.duduke.agentdb.policy.PolicyRepository;
-import com.duduke.agentdb.policy.ResolvedTable;
+import com.duduke.agentdb.policy.model.ResolvedTable;
 import com.duduke.agentdb.query.AgentQueryService;
 import com.duduke.agentdb.query.dsl.QueryRequest;
 import com.duduke.agentdb.tool.dto.ColumnDescriptor;
