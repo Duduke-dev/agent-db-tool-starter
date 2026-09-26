@@ -1,0 +1,115 @@
+# ============================================================================
+# 构建产物
+# ============================================================================
+target/
+build/
+out/
+bin/
+
+*.class
+
+# 打包产物（正常都落在 target/ 下，这里是防手滑）
+*.jar
+*.war
+*.nar
+*.ear
+
+# ============================================================================
+# Maven 临时文件（release / versions 插件产生，不忽略会污染工作区）
+# ============================================================================
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# 注：.mvn/wrapper/maven-wrapper.jar 刻意不忽略 —— wrapper 靠它工作，应当入库
+
+# ============================================================================
+# JVM 崩溃日志
+# ============================================================================
+hs_err_pid*
+replay_pid*
+*.hprof
+javacore.*.txt
+core.*.dmp
+
+# ============================================================================
+# IDE
+# ============================================================================
+.idea/
+*.iml
+*.iws
+*.ipr
+
+.vscode/
+
+# Eclipse
+.settings/
+.classpath
+.project
+.factorypath
+
+# NetBeans
+.nbproject/
+nbproject/private/
+
+# 编辑器临时文件
+*.swp
+*.swo
+*.tmp
+*~
+*.bak
+*.orig
+
+# ============================================================================
+# 配置文件 —— 含连接串、账号、密码，绝不入库
+#
+# 这里忽略的是所有 application*.yml，包括测试资源里的那份：
+# 它带着管理员账号和密码，提上去等于把库的凭据公开了。
+# 对应的模板在 application.yml.example，复制成 application.yml 再改即可。
+# ============================================================================
+application.yml
+application-*.yml
+!application*.example.yml
+!application*.example.yaml
+
+application-local.yml
+application-local.yaml
+application-*.local.yml
+**/*-local.properties
+
+# 环境变量与凭据
+.env
+.env.*
+!.env.example
+
+# 证书 / 密钥库
+*.jks
+*.p12
+*.pfx
+*.keystore
+*.pem
+*.key
+
+# ============================================================================
+# 日志
+# ============================================================================
+*.log
+logs/
+spring-shell.log
+
+# ============================================================================
+# OS
+# ============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/

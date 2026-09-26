@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+    刻意直接继承 spring-boot-starter-parent，而不是上层那个聚合 pom。
+    原因：这个模块是独立入库（独立 git 仓库）的交付物，
+    单独 clone 出来必须能直接构建 —— 依赖一个不在仓库里的父 pom 就做不到。
+  -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.1</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.duduke</groupId>
+  <artifactId>agent-db-tool-starter</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <name>agent-db-tool-starter</name>
+  <description>受控数据库访问的 Agent Tool：策略白名单 + 三层校验，以 Spring Boot Starter 形式提供</description>
+
+  <properties>
+    <java.version>25</java.version>
+    <spring-ai.version>2.0.1</spring-ai.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- Spring AI 2.0.x 的 BOM 只负责 Spring AI 自己的模块；Spring Boot 版本由上面的 parent 管理 -->
+      <dependency>
+        <groupId>org.springframework.ai</groupId>
+        <artifactId>spring-ai-bom</artifactId>
+        <version>${spring-ai.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- 只用到 @Tool 注解与 MethodToolCallbackProvider，不引入模型 starter，因此使用方不需要 API key -->
+    <dependency>
+      <groupId>org.springframework.ai</groupId>
+      <artifactId>spring-ai-model</artifactId>
+    </dependency>
+
+    <!-- DataSource 与 DSLContext 由 Boot 自动配置；jOOQ 版本交给 Boot 管理 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jooq</artifactId>
+    </dependency>
+
+    <!--
+      刻意不带 spring-boot-starter-web：它自己的对外形态由使用方决定
+      （挂到 ChatClient、加 HTTP 端点、或纯 bean 引入都行）。
+      也刻意不带任何数据库驱动：用 PostgreSQL 还是 MySQL 是使用方的选择。
+    -->
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- 驱动只在测试期需要；它不进入使用方的依赖树 -->
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
