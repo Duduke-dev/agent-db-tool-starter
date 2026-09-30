@@ -7,7 +7,6 @@ import com.duduke.agentdb.policy.model.ResolvedColumn;
 import com.duduke.agentdb.policy.model.ResolvedTable;
 import com.duduke.agentdb.query.dsl.Aggregate;
 import com.duduke.agentdb.query.dsl.Condition;
-import com.duduke.agentdb.query.dsl.OrderItem;
 import com.duduke.agentdb.query.dsl.QueryRequest;
 import com.duduke.agentdb.query.dsl.SelectItem;
 import com.duduke.agentdb.query.validation.AuthorizationValidator;

@@ -88,6 +88,12 @@ spring:
       read-only: true          # 用 JDBC 的 setReadOnly，换库时这行不用改
 
 agent-db:
+  # 按需装载哪几组工具 —— 关掉一组，对应的 bean 根本不注册，模型也看不到它们的工具说明。
+  # 工具说明是要占上下文的；给模型一堆用不到的工具，既浪费 token 又降低选择准确率。
+  tools:
+    query: true        # 自由查询：list_tables / describe_table / query（默认开）
+    template: false    # 查询模板：list_query_templates / run_query_template（默认关）
+
   # 启动时建授权表并把库里现有的表和字段全部登记为清单。
   # 用管理员连接 —— 应用账号是只读的、建不了表。
   bootstrap:
@@ -101,21 +107,43 @@ agent-db:
   #   statement-timeout: 10s
 ```
 
+**关掉一组意味着什么**：不是"工具不暴露给模型"，而是**整组 bean 都不注册**——
+仓储、服务、建表全都不跑。所以关掉 `template` 时不会去建 `agent_query_template` 表。
+
+`query` 默认开（关掉它这个 starter 就没有任何工具了）；`template` 默认关
+（它是可选能力，且要多建一张表）。
+
 ### 4. 挂到 ChatClient
 
-工具集以 `ToolCallbackProvider` bean 暴露（默认 bean 名 `agentDatabaseToolCallbackProvider`），
-直接挂上去即可：
+工具集以两个 `ToolCallbackProvider` bean 暴露：
+
+| bean 名 | 包含的工具 | 开关 |
+|---|---|---|
+| `agentDatabaseToolCallbackProvider` | `list_tables` / `describe_table` / `query` | `agent-db.tools.query`（默认 true） |
+| `agentQueryTemplateToolCallbackProvider` | `list_query_templates` / `run_query_template` | `agent-db.tools.template`（默认 false） |
+
+**刻意分成两个**：你可以在不同场景只挂需要的那组，比如做探索式问答时只挂自由查询，
+做固定报表时只挂模板。
 
 ```java
 @Bean
-ChatClient chatClient(ChatClient.Builder builder, ToolCallbackProvider agentDatabaseToolCallbackProvider) {
-    return builder.defaultTools(agentDatabaseToolCallbackProvider).build();
+ChatClient chatClient(ChatClient.Builder builder,
+                      ToolCallbackProvider agentDatabaseToolCallbackProvider,
+                      ToolCallbackProvider agentQueryTemplateToolCallbackProvider) {
+    return builder
+            .defaultToolCallbacks(agentDatabaseToolCallbackProvider,
+                                  agentQueryTemplateToolCallbackProvider)
+            .build();
 }
 ```
 
-## 三个工具
+只开自由查询时，第二个 provider 不存在，直接注入会启动失败——按上面的开关配好即可。
+
+## 五个工具
 
 模型看到的全部能力，到此为止：
+
+### 自由查询（`DatabaseAgentTools`）
 
 | 工具 | 作用 |
 |---|---|
@@ -131,7 +159,7 @@ query([{
   "select": [{"column": "category"}, {"column": "id", "aggregate": "COUNT", "alias": "cnt"}],
   "where":  [{"column": "price", "operator": "GT", "values": ["100"]}],
   "groupBy": ["category"],
-  "orderBy": [{"column": "cnt", "direction": "DESC"}],
+  "orderBy": [{"column": "category", "direction": "ASC"}],
   "limit": 20
 }])
 ```
@@ -139,9 +167,74 @@ query([{
 支持批量提交，**每条独立返回结果或错误**——某条失败不影响其他条，且会带着错误码回来，
 模型看错误码就知道该改什么。
 
+### 查询模板（`QueryTemplateTools`）
+
+| 工具 | 作用 |
+|---|---|
+| `list_query_templates()` | 有哪些预定义查询模板、每个要传什么参数 |
+| `run_query_template(name, params)` | 按模板名 + 参数执行 |
+
+**模板是"让模型挑选已固化的查询"，和"让模型自由表达查询"是两件事**，所以分在两组工具里。
+
+它的价值在于：常用统计（比如"按月统计各分类销售额"）如果让模型每次现拼聚合查询，
+既费往返又容易算错口径。把查询固化成模板后，模型只需选模板 + 填参数，
+**2 轮完成，口径统一**。
+
+模板存在 `agent_query_template` 表里，由 DBA 登记：
+
+```jsonc
+{
+  "template_name": "monthly_sales_by_category",
+  "description": "按月统计各分类销售额",
+  "visible": true,
+  "template_json": {
+    "table": "product",
+    "select": [{"column":"category"}, {"column":"price","aggregate":"SUM","alias":"total"}],
+    "where": [
+      {"column":"created_at","operator":"GE","values":["${monthStart}"]},
+      {"column":"created_at","operator":"LT","values":["${monthEnd}"]}
+    ],
+    "groupBy": ["category"],
+    "orderBy": [{"column":"category","direction":"ASC"}]
+  },
+  "parameters_json": [
+    {"name":"monthStart","type":"DATE","description":"统计起始日（含）","required":true},
+    {"name":"monthEnd","type":"DATE","description":"统计结束日（不含）","required":true}
+  ]
+}
+```
+
+模型调用：
+
+```jsonc
+run_query_template("monthly_sales_by_category",
+                   {"monthStart": "2026-09-01", "monthEnd": "2026-10-01"})
+```
+
+#### 模板的安全边界（重要）
+
+**`${param}` 只能出现在 `where[].values[]` 里**，绝不能用于 `table` / `column` /
+`operator` / `groupBy` / `orderBy` / `limit`。
+
+一旦参数能充当标识符，模型就绕开了授权表、能自己决定查哪张表和哪个列——**授权就白做了**。
+所以模板在加载时会做白名单式的位置校验，不合法的模板直接拒绝执行。
+
+其他几条：
+
+- **模板不产生任何新权限**：填充后产出的就是标准 `QueryRequest`，走和 `query` 完全相同的链路。
+  模板引用的列如果被取消授权，执行时一样会被拒绝
+- **拒绝未声明的参数**（而不是静默忽略）：模型传 `table` 这类名字说明它在试探
+- 参数支持 `STRING` / `NUMBER` / `DATE` / `DATETIME` / `BOOLEAN` 五种类型，
+  可声明必填和枚举取值（`allowedValues`）
+- 参数声明与用法会做交叉检查：「声明了但没用到」「用了但没声明」都会报错
+- 模板默认 `visible = FALSE`，和授权表一致的「默认拒绝」
+
+**写模板的权限等同 DBA 权限**——因为能定义模板就等于能定义"agent 能查什么"。
+
 ## 授权模型
 
-两张表，`bootstrap` 开启时自动创建：
+**授权**用这两张表，`bootstrap` 开启时自动创建（查询模板另有一张
+`agent_query_template`，见「查询模板」一节）：
 
 ```sql
 agent_table_policy  (table_name PK, description, visible, queryable)
@@ -233,6 +326,7 @@ com.duduke.agentdb
 │   ├── QueryCompiler                     三层校验编排 + jOOQ 编译
 │   ├── CompiledQuery                     编译产物：可执行的 jOOQ 查询
 │   ├── AgentQueryService                 执行 → 截断 → 返回
+│   ├── QueryResult                       结果集：列名、行数据、是否被截断
 │   ├── dsl/                              模型能表达的查询（没有 JOIN、没有 SQL 字符串）
 │   │   ├── QueryRequest                  table / select / where / groupBy / orderBy / limit
 │   │   ├── SelectItem / Condition / OrderItem
@@ -242,17 +336,34 @@ com.duduke.agentdb
 │       ├── ParameterValidator            能不能这么用
 │       └── SemanticValidator             这么写 SQL 成不成立
 │
+├── template/       查询模板（预定义参数化查询）
+│   ├── QueryTemplateSchema               模板表定义
+│   ├── QueryTemplateInitializer          启动期建模板表
+│   ├── QueryTemplateRepository           读模板 + 严格解析
+│   ├── QueryTemplateService              对外门面：模板 + 参数 → QueryRequest
+│   ├── TemplatePlaceholder               占位符校验与填充 ← 安全边界在这
+│   ├── TemplateParameterValidator        参数值校验
+│   ├── dto/  QueryTemplateInfo
+│   └── model/  ResolvedTemplate / TemplateParameter / ParameterType
+│
 └── tool/           对模型的暴露面
-    ├── DatabaseAgentTools                @Tool 门面，只做转发
+    ├── DatabaseAgentTools                自由查询的 @Tool 门面
+    ├── QueryTemplateTools                模板查询的 @Tool 门面
     └── dto/                              回给模型的数据形状
         ├── TableSummary / TableDescriptor / ColumnDescriptor
         └── QueryOutcome                  批量查询里单条的结果或错误
 ```
 
-**依赖方向是单向的**：`tool → query → policy → error`。上层依赖下层，没有反向依赖和环。
+**依赖方向是单向的**：`tool → template → query → policy → error`。
+上层依赖下层，没有反向依赖和环。
 
-**主包放行为、子包放数据**是这个项目的惯例：`policy/model`、`query/dsl`、`tool/dto`。
-读代码时不用每次重新判断该去哪找。
+**主包放行为、子包放数据**是这个项目的惯例：`policy/model`、`query/dsl`、
+`tool/dto`、`template/model`。读代码时不用每次重新判断该去哪找。
+
+**`template` 和 `query` 是平行的两套**：前者"挑选已固化的查询"，后者"自由表达查询"。
+`template` 唯一的对外出口是 `QueryTemplateService`，它产出标准 `QueryRequest` 后就交回 `query`。
+内部的 `TemplatePlaceholder` / `TemplateParameterValidator` 保持包内可见 ——
+**只有一处入口可能被绕过**。
 
 ## 数据库支持
 
@@ -271,8 +382,12 @@ com.duduke.agentdb
 
 ## 已知边界
 
+- **`orderBy` 不支持按聚合别名排序**：`ORDER BY cnt DESC`（`cnt` 是 `select` 里的别名）
+  在 SQL 上合法，但校验把 `orderBy.column` 当真实列名查授权表，别名会被判成「列不存在」。
+  目前只能用 `groupBy` 里的真实列排序。这是个真实的能力缺口，不是设计选择
 - **不支持多 schema**：授权表里的表名不带 schema 前缀，两个 schema 有同名表时会取与当前连接一致的那个
 - **布尔类型在 MySQL 上有差异**：MySQL 的 `BOOLEAN` 实为 `TINYINT(1)`，元数据报 `TINYINT`，
   因此模型传 `'true'` 去筛布尔列会失败，得传 `'1'`
 - **测试需要连真实数据库**：`mvn test` 需要本地有 PostgreSQL 和相应账号，
-  配置模板见 `src/test/resources/application.yml.example`
+  配置模板见 `src/test/resources/application.yml.example`。
+  这是这个项目的一个已知弱点 —— 别人 clone 下来跑不了测试

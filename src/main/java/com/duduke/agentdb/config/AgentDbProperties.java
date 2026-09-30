@@ -11,11 +11,30 @@ import java.time.Duration;
  * 每次调用实时读取。这里装的是不随授权变化、也不该由业务侧调整的参数。
  */
 @ConfigurationProperties(prefix = "agent-db")
-public record AgentDbProperties(Limits limits, Bootstrap bootstrap) {
+public record AgentDbProperties(Limits limits, Bootstrap bootstrap, Tools tools) {
 
     public AgentDbProperties {
         limits = (limits == null) ? new Limits(0, 0, 0, null, 0, 0, 0) : limits;
         bootstrap = (bootstrap == null) ? Bootstrap.disabled() : bootstrap;
+        tools = (tools == null) ? Tools.defaults() : tools;
+    }
+
+    /**
+     * 按需装载哪几组工具。
+     * <p>
+     * 关掉一组，对应的 bean 根本不会注册 —— 模型看不到它们的工具说明，
+     * 上下文更干净，选择也更准。这是「工具膨胀」的正面解法：
+     * 与其让模型在一堆无关工具里挑，不如按场景只给它需要的。
+     */
+    public record Tools(boolean query, boolean template) {
+
+        /**
+         * 自由查询默认开：关掉它这个 starter 就没有任何工具了，那不如不引入。
+         * 查询模板默认关：它是后加的能力，且要建额外的表，需要的人显式打开。
+         */
+        public static Tools defaults() {
+            return new Tools(true, false);
+        }
     }
 
     /** 全局安全阀，对所有查询统一生效。 */
